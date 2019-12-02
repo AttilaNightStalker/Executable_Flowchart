@@ -1,0 +1,8 @@
+[
+  {
+    "id": "FlowChartViz",
+    "title": "FlowChartViz",
+    "panel": "panels/FlowChartViz/FlowChartVizPanel",
+    "DEBUG_ONLY": false
+  }
+]

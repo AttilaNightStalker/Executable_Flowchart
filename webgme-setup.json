@@ -1,0 +1,23 @@
+{
+  "components": {
+    "visualizers": {
+      "FlowChartViz": {
+        "src": "panels/FlowChartViz/FlowChartVizPanel",
+        "title": "FlowChartViz",
+        "panel": "src/visualizers/panels/FlowChartViz",
+        "secondary": false,
+        "widget": "src/visualizers/widgets/FlowChartViz"
+      }
+    },
+    "plugins": {
+      "FlowchartCode": {
+        "src": "src/plugins/FlowchartCode",
+        "test": "test/plugins/FlowchartCode"
+      }
+    }
+  },
+  "dependencies": {
+    "visualizers": {},
+    "plugins": {}
+  }
+}

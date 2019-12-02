@@ -1,0 +1,78 @@
+/**
+ * This file is for any css that you may want for this visualizer.
+ *
+ * Ideally, you would use the scss file also provided in this directory 
+ * and then generate this file automatically from that. However, you can 
+ * simply write css if you prefer
+ */
+
+.flow-chart-viz {
+  outline: none; }
+
+.Decision {
+  background-color: transparent;
+  position: relative;
+  height: 120px;
+  width: 120px;
+  line-height: 100px;
+  text-align: center;
+  margin: 0px 0px;
+}
+.Decision:after {
+  position: absolute;
+  top: 0px;
+  left: 7px;
+  content: '';
+  height: calc(100% - 22px);  /* -22px is 2 * 10px gap on either side - 2px border on either side */
+  width: calc(100% - 22px);  /* -22px is 2 * 10px gap on either side - 2px border on either side */
+  border: 5px solid black;
+  transform: rotateX(45deg) rotateZ(45deg);
+}
+
+.Process{
+  width: 120px;
+  height: 60px;
+  background: white;
+  border: 5px solid black;
+  line-height: 50px;
+  text-align: center;
+}
+
+.Start {
+  border-radius: 10px;
+  width: 120px;
+  height: 60px;
+  background: yellow;
+  /* border: 5px solid; */
+  border-width: 5px;
+  border-style: solid;
+  line-height: 50px;
+  text-align: center;
+}
+
+.End {
+  border-radius: 10px;
+  width: 120px;
+  height: 60px;
+  background: yellowgreen;
+  border: 5px solid black;
+  line-height: 50px;
+  text-align: center;
+}
+
+.btn {
+  width: 100px;
+  height: 30px;
+  line-height: 12px;
+  text-align: center;
+  margin: 0;
+  padding: 0;
+}
+
+#paint {
+  left:0;
+  top: 0;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+}
