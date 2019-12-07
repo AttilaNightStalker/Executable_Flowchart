@@ -251,7 +251,7 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
                 if (nodeInfo.outFlow.length == 0) {
                     self._cur_state = null;
                     for (var id in self._varInfo) {
-                        self.nodeElementbyId[id + '_input'].disabled = false;
+                        // self.nodeElementbyId[id + '_input'].disabled = false;
                         self._varInfo[id].value = self._varInfo[id].default_val;
                         self.nodeElementbyId[id + '_input'].value = self._varInfo[id].value;
                     }
@@ -289,7 +289,7 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
         self._el.append(reset);
 
         reset.onclick = function() {
-            console.log(self._triggerBtn);
+
             self._triggerBtn.disabled = false;
 
             if (self._cur_state != null) {
@@ -303,6 +303,7 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
                 // self.nodeElementbyId[id + '_input'].value = self._varInfo[id].value;
                 self.nodeElementbyId[id + '_input'].disabled = false;
             }
+
         }
         // console.log(this._el["0"].innerHTML);
     };
