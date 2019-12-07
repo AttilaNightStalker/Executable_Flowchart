@@ -10,11 +10,17 @@
 define([
     'plugin/PluginConfig',
     'text!./metadata.json',
-    'plugin/PluginBase'
+    'plugin/PluginBase',
+    'text!./Templates/index.html', 
+    'ejs',
+    'text!./Templates/programjs.ejs'
 ], function (
     PluginConfig,
     pluginMetadata,
-    PluginBase) {
+    PluginBase,
+    indexHtmlContent,
+    ejs,
+    programJsTemplate) {
     'use strict';
 
     pluginMetadata = JSON.parse(pluginMetadata);
@@ -30,6 +36,7 @@ define([
         // Call base class' constructor.
         PluginBase.call(this);
         this.pluginMetadata = pluginMetadata;
+        this.pathToNode = {};
     }
 
     /**
@@ -56,10 +63,11 @@ define([
         // Use this to access core, project, result, logger etc from PluginBase.
 
         // Using the logger.
-        this.logger.debug('This is a debug message.');
-        this.logger.info('This is an info message.');
-        this.logger.warn('This is a warning message.');
-        this.logger.error('This is an error message.');
+
+        // this.logger.debug('This is a debug message.');
+        // this.logger.info('This is an info message.');
+        // this.logger.warn('This is a warning message.');
+        // this.logger.error('This is an error message.');
 
         // Using the coreAPI to make changes.
         // this.core.setAttribute(nodeObject, 'name', 'My new obj');
@@ -68,16 +76,285 @@ define([
 
         // This will save the changes. If you don't want to save;
         // exclude self.save and call callback directly from this scope.
-        this.save('FlowchartCode updated model.')
-            .then(() => {
-                this.result.setSuccess(true);
-                callback(null, self.result);
-            })
-            .catch((err) => {
-                // Result success is false at invocation.
-                this.logger.error(err.stack);
-                callback(err, self.result);
+
+        console.log("code gen");
+
+
+        // this.save('FlowchartCode updated model.')
+        //     .then(() => {
+        //         this.result.setSuccess(true);
+        //         callback(null, self.result);
+        //     })
+        //     .catch((err) => {
+        //         // Result success is false at invocation.
+        //         this.logger.error(err.stack);
+        //         callback(err, self.result);
+        //     });
+
+        var self = this,
+        artifact,
+        nodeObject;
+
+        self.extractDataModel()
+        .then(function (dataModel) {
+            var dataModelStr = JSON.stringify(dataModel, null, 4);
+            self.dataModel = dataModel;
+
+            self.logger.info('Extracted dataModel', dataModelStr);
+
+            return self.blobClient.putFile('dataModel.json', dataModelStr);
+        })
+        .then(function (jsonFileHash) {
+            var programJS;
+            self.logger.info('dataModel.json available with blobHash', jsonFileHash);
+            // Add link from result to this file.
+            self.result.addArtifact(jsonFileHash);
+
+            // Create a complex artifact, with links to multiple files.
+            artifact = self.blobClient.createArtifact('simulator');
+
+            programJS = ejs.render(programJsTemplate, self.dataModel).replace(new RegExp('&quot;', 'g'), '"');
+            self.logger.info('program.js', programJS);
+
+            return artifact.addFilesAsSoftLinks({
+                'program.js': programJS,
+                'index.html': indexHtmlContent
             });
+        })
+        .then(function (/*hashes*/) {
+            return artifact.save();
+        })
+        .then(function (simulatorHash) {
+            self.result.addArtifact(simulatorHash);
+
+            self.core.setAttribute(self.activeNode, 'simulator', simulatorHash);
+            self.core.setAttribute(self.activeNode, 'simulatorOrigin', self.commitHash);
+
+            return self.save('Added simulator to model');
+        })
+        .then(function () {
+
+            self.result.setSuccess(true);
+            callback(null, self.result);
+        })
+        .catch(function (err) {
+            // Success is false at invocation.
+            callback(err, self.result);
+        });
+    };
+
+
+    FlowchartCode.prototype.extractDataModel = function (callback) {
+        // return new Promise(function(resolve, reject) {
+        //     resolve({
+        //         cnt: 9, 
+        //         content: "ddd"
+        //     });
+        // });
+
+        var self = this;
+        var dataModel = {
+            flowChart: {
+                variables: [], 
+                nodes: [],
+                startPoint: null
+            }
+        };
+
+        return this.core.loadSubTree(self.activeNode).then(function(nodes) {
+            var i,
+                childNode,
+                childName,
+                childrenPaths, 
+                outFlows = {};
+
+            var srcId, dstId, transType;
+            
+            for (i = 0; i < nodes.length; i++) {
+                self.pathToNode[self.core.getPath(nodes[i])] = nodes[i];
+            }
+
+            childrenPaths = self.core.getChildrenPaths(self.activeNode);
+
+            for (i = 0; i < childrenPaths.length; i++) {
+                childNode = self.pathToNode[childrenPaths[i]];
+                if (self.isMetaTypeOf(childNode, self.META['Transition']) == true) {
+
+                    srcId = self.core.getPointerPath(childNode, 'src');
+                    dstId = self.core.getPointerPath(childNode, 'dst');
+
+                    if (!(srcId in outFlows)) {
+                        outFlows[srcId] = [];
+                    }
+
+                    if (self.isMetaTypeOf(childNode, self.META['DefaultTrans'])) {
+                        transType = 'default';
+                    }
+                    else if (self.isMetaTypeOf(childNode, self.META['NegativeTrans'])) {
+                        transType = 'negative';
+                    }
+                    else if (self.isMetaTypeOf(childNode, self.META['PositiveTrans'])) {
+                        transType = 'positive';
+                    }
+                    else {
+                        self.logger.error("wrong type id=" + childrenPaths[i]);
+                    }
+
+                    outFlows[srcId].push({
+                        id: dstId, 
+                        type: transType
+                    });
+                }
+            }
+
+            for (i = 0; i < childrenPaths.length; i++) {
+                childNode = self.pathToNode[childrenPaths[i]];
+
+                if (self.isMetaTypeOf(childNode, self.META['Node'])) {
+                    let pushedObj = self.parseNodeInfo(childrenPaths[i], outFlows);
+
+                    if (pushedObj.type == 'Start') {
+                        if (dataModel.flowChart.startPoint !== null) {
+                            self.logger.error("more than one starts");
+                        }
+                        else {
+                            dataModel.flowChart.startPoint = childrenPaths[i];
+                        }
+                    }
+
+                    dataModel.flowChart.nodes.push(pushedObj);
+                }
+
+                else if (self.isMetaTypeOf(childNode, self.META['Variable'])) {
+                    childName = self.core.getAttribute(childNode, 'name');
+                    let val = self.core.getAttribute(childNode, 'value');
+
+                    if (self.isMetaTypeOf(childNode, self.META['String_Var'])) {
+                        dataModel.flowChart.variables.push({
+                            id: childrenPaths[i], 
+                            name: childName, 
+                            type: 'string',
+                            value: val
+                        });
+                    }
+                    else if (self.isMetaTypeOf(childNode, self.META['Int_Var'])) {
+                        dataModel.flowChart.variables.push({
+                            id: childrenPaths[i], 
+                            name: childName,
+                            type: 'int',
+                            value: val
+                        });
+                    }
+                    else if (self.isMetaTypeOf(childNode, self.META['Bool_Var'])) {
+                        dataModel.flowChart.variables.push({
+                            id: childrenPaths[i], 
+                            name: childName, 
+                            type: 'bool',
+                            value: val
+                        });
+                    }
+                    else {
+                        self.logger.error("wrong var type id=" + childrenPaths[i]);
+                    }
+                }
+                else if (self.isMetaTypeOf(childNode, self.META['Transition'])){  
+                }
+
+                else {
+                    self.logger.error("wrong data type id=" + childrenPaths[i]);
+                }
+            }
+
+            return dataModel;
+        }).nodeify(callback);
+    };
+
+
+    FlowchartCode.prototype.parseNodeInfo = function(nodeId, outFlows) {
+        var self = this;
+        var node = self.pathToNode[nodeId];
+
+        var nodeType, nodeName, procFunc, decisionExp;
+
+        nodeName = self.core.getAttribute(node, 'name');
+
+        if (self.isMetaTypeOf(node, self.META['Process'])) {
+            nodeType = 'Process';
+            procFunc = self.core.getAttribute(node, 'statements');
+
+            if (outFlows[nodeId].length < 1) {
+                self.logger.error("no out flow for process id=" + nodeId);
+            }
+            else if (outFlows[nodeId].length > 1) {
+                self.logger.error("too many out flow for process id=", nodeId);
+            }
+
+            return {
+                id: nodeId, 
+                name: nodeName, 
+                type: nodeType, 
+                func: procFunc,
+                outFlow: outFlows[nodeId][0]
+            };
+        }
+
+        else if (self.isMetaTypeOf(node, self.META['Decision'])) {
+            nodeType = 'Decision';
+            decisionExp = self.core.getAttribute(node, 'expression'); 
+
+            if (outFlows[nodeId].length < 2) {
+                self.logger.error("no enough flow for decision id=" + nodeId);
+            }
+            else if (outFlows[nodeId].length > 2) {
+                self.logger.error("too many out flow for decision id=", nodeId);
+            }
+            else if (outFlows[nodeId][0].type == outFlows[nodeId][1].type) {
+                self.logger.error("out flow must be in different type for decision id=", nodeId);
+            }
+            else if (outFlows[nodeId][0].type == 'positive') {
+                let temp = outFlows[nodeId][0];
+                outFlows[nodeId][0] = outFlows[nodeId][1];
+                outFlows[nodeId][1] = temp;
+            }
+
+            return {
+                id: nodeId, 
+                name: nodeName, 
+                type: nodeType, 
+                exp: decisionExp, 
+                nFlow: outFlows[nodeId][0],
+                yFlow: outFlows[nodeId][1]
+            };
+        }
+
+        else if (self.isMetaTypeOf(node, self.META['Start'])) {
+            nodeType = 'Start';
+            if (outFlows[nodeId].length < 1) {
+                self.logger.error("no out flow for start id=" + nodeId);
+            }
+            else if (outFlows[nodeId].length > 1) {
+                self.logger.error("too many out flow for start id=", nodeId);
+            }
+
+            return {
+                id: nodeId, 
+                name: nodeName, 
+                type: nodeType, 
+                outFlow: outFlows[nodeId][0]
+            };
+        }
+        else if (self.isMetaTypeOf(node, self.META['End'])) {
+            nodeType = 'End';
+            return {
+                id: nodeId, 
+                name: nodeName, 
+                type: nodeType
+            }
+        }
+        else {
+            self.logger.error("wrong node type id=" + nodeId);
+            return null;
+        }
     };
 
     return FlowchartCode;

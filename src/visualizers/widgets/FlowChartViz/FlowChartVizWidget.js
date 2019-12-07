@@ -22,6 +22,7 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
         this._logger.debug('ctor finished');
 
         this._cur_state = null;
+        this.nodeElementbyId = {};
     }
 
     FlowChartVizWidget.prototype._initialize = function () {
@@ -111,10 +112,12 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
     /******************************************************************************************************** */
     FlowChartVizWidget.prototype.renderChart = function (nodesInfo, varInfo, varNameMap) {
         console.log("rendering chart");
+        let self = this;
 
-        this._nodesInfo = nodesInfo;
-        this._varInfo = varInfo;
-        this._varNameMap = varNameMap;
+        self._nodesInfo = nodesInfo;
+        self._varInfo = varInfo;
+        self._varNameMap = varNameMap;
+        self._triggerBtn = null;
 
         for (var id in nodesInfo) {
             var node = document.createElement('div');
@@ -125,10 +128,11 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
             node.style.left = nodesInfo[id].position.x + "px";
             node.style.top = nodesInfo[id].position.y + "px";
             node.innerHTML = nodesInfo[id].name;
-            this._el.append(node);
+            self._el.append(node);
+            self.nodeElementbyId[id] = node;
             
             if (nodesInfo[id].type == 'Start') {
-                this._start_point = id;
+                self._start_point = id;
             }
         }
 
@@ -142,28 +146,136 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
                 let outX = nodesInfo[out.id].position.x;
                 let outY = nodesInfo[out.id].position.y;
                 
-                this._drawArrow(posX, posY, outX, outY, "#000000", nodesInfo[id].type, nodesInfo[id].outFlow[i], nodesInfo[out.id].type);
+                self._drawArrow(posX, posY, outX, outY, nodesInfo[id].type, nodesInfo[id].outFlow[i], nodesInfo[out.id].type);
             }
         }
 
-        var trigger = document.createElement('button');
+        for (var id in varInfo) {
+            console.log('id', id);
+            var varVal = document.createElement('div');
+            var varInput = document.createElement('input');
+            varInput.id = id + '_input';
+            varInfo[id].value = varInfo[id].default_val;
+            varInput.value = varInfo[id].value;
+
+            let span = document.createElement('span');
+            span.innerHTML = varInfo[id].name + ' = ';
+
+            varVal.id = id;
+            varVal.style.position = 'absolute';
+            varVal.style.display = 'block';
+            varVal.style.left = varInfo[id].position.x + 'px';
+            varVal.style.top = varInfo[id].position.y + 'px';
+
+            varVal.appendChild(span);
+            varVal.appendChild(varInput);
+
+            self._el.append(varVal);
+            self.nodeElementbyId[id + '_input'] = varInput;
+        }
+
+        self._triggerBtn = document.createElement('button');
+        let trigger = self._triggerBtn;
         trigger.id = 'trigger';
         trigger.className = 'btn'
         trigger.style.position = 'absolute';
         trigger.style.left = '5px';
         trigger.style.top = '40px';
         trigger.innerHTML = 'trigger';
-        this._el.append(trigger);
-
-        let self = this;
+        self._el.append(trigger);
+        trigger.disabled = true;
 
         trigger.onclick = function () {
-            if (self._cur_state === null) {
+            var curNode;
+            var boolVal;
+
+            if (self._cur_state == null) {
                 self._cur_state = self._start_point;
-                console.log(self._cur_state);
-                let curNode = document.getElementById(self._cur_state);
+                console.log(self._cur_state, 'start');
+                curNode = self.nodeElementbyId[self._cur_state];
                 curNode.style.borderColor = 'red';
-                self._el.append(curNode);
+                // self._el.append(curNode);
+
+                for (var id in self._varInfo) {
+                    let varValue = self.nodeElementbyId[id + '_input'].value;
+                    if (self._varInfo[id].type == 'String_Var') {
+                        self._varInfo[id].value = varValue;
+                    }
+                    else {
+                        self._varInfo[id].value = eval(varValue);
+                    }
+                    
+                    self.nodeElementbyId[id + '_input'].disabled = true;
+                }
+            }
+
+            else {
+                let nodeInfo = self._nodesInfo[self._cur_state];
+                if (nodeInfo.type == 'Process') {
+                    console.log('Process')
+                    console.log(nodeInfo.func);
+                    let arglist = []
+                    for (var id in self._varInfo) {
+                        arglist.push(self._varInfo[id].value);
+                    }
+
+                    console.log('execute process..');
+                    let resDict = nodeInfo.func(...arglist);
+                    console.log(resDict);
+
+                    for (var name in resDict) {
+                        let idOfName = self._varNameMap[name];
+                        self._varInfo[idOfName].value = resDict[name];
+                        self.nodeElementbyId[idOfName + '_input'].value = self._varInfo[idOfName].value;
+                    }
+                }
+
+                else if (nodeInfo.type == 'Decision') {
+                    console.log('Decision');
+                    console.log(nodeInfo.func);
+
+                    let arglist = [];
+                    for (id in self._varInfo) {
+                        arglist.push(self._varInfo[id].value);
+                    }
+
+                    boolVal = nodeInfo.func(...arglist);
+                    console.log(boolVal);
+                }
+
+                curNode = self.nodeElementbyId[self._cur_state];
+                // document.getElementById(self._cur_state).then
+                curNode.style.borderColor = 'black';
+                // self._el.append(curNode);
+
+                if (nodeInfo.outFlow.length == 0) {
+                    self._cur_state = null;
+                    for (var id in self._varInfo) {
+                        self.nodeElementbyId[id + '_input'].disabled = false;
+                        self._varInfo[id].value = self._varInfo[id].default_val;
+                        self.nodeElementbyId[id + '_input'].value = self._varInfo[id].value;
+                    }
+
+                    self._triggerBtn.disabled = true;
+                }
+
+                else {
+                    if (nodeInfo.type == 'Decision' && boolVal == true) {
+                        self._cur_state = nodeInfo.outFlow[1].id;
+                    }
+                    else {
+                        self._cur_state = nodeInfo.outFlow[0].id;
+                    }
+
+                    curNode = self.nodeElementbyId[self._cur_state];
+                    nodeInfo = self._nodesInfo[self._cur_state];
+                    
+                    curNode.style.borderColor = 'red';
+
+                    // self._el.append(curNode);
+
+                    console.log(self._nodesInfo[self._cur_state].name);
+                }
             }
         }
 
@@ -174,73 +286,106 @@ define(['css!./styles/FlowChartVizWidget.css'], function () {
         reset.style.left = '5px';
         reset.style.top = '75px';
         reset.innerHTML = 'reset';
-        this._el.append(reset);
+        self._el.append(reset);
+
+        reset.onclick = function() {
+            console.log(self._triggerBtn);
+            self._triggerBtn.disabled = false;
+
+            if (self._cur_state != null) {
+                let curNode = self.nodeElementbyId[self._cur_state];
+                curNode.style.borderColor = 'black';
+                self._cur_state = null;
+            }
+        
+            for (var id in self._varInfo) {
+                // self._varInfo[id].value = self._varInfo[id].default_val;
+                // self.nodeElementbyId[id + '_input'].value = self._varInfo[id].value;
+                self.nodeElementbyId[id + '_input'].disabled = false;
+            }
+        }
         // console.log(this._el["0"].innerHTML);
     };
 
 
-    FlowChartVizWidget.prototype._drawArrow = async function (x1, y1, x2, y2, Hex_Color, src, trans, dst) {
+    FlowChartVizWidget.prototype.reportErrors = function(errMsg) {
+        for (var i = 0; i < errMsg.length; i++) {
+            console.log(i);
+            let msg = document.createElement('div');
+            msg.innerHTML = errMsg[i];
+            msg.style.position = 'relative';
+            msg.style.marginTop = '30px';
+            msg.id = 'err_' + i;
+            this._el.append(msg);
+        }
+    }
+
+    FlowChartVizWidget.prototype._drawArrow = async function (x1, y1, x2, y2, src, trans, dst) {
         // console.log(canvasElement); }
 
         let L_Width = 3;
         var c = document.getElementById('paint');
         var ctx = c.getContext('2d');
+
+        if (ctx == null) {
+            return;
+        }
         ctx.beginPath();
         ctx.lineWidth = L_Width;
-        ctx.strokeStyle = Hex_Color;
+
+        if (trans.type == 'PositiveTrans') {
+            ctx.strokeStyle = '#1f8c0b';
+        }
+        else if (trans.type == 'NegativeTrans') {
+            ctx.strokeStyle = '#8c0b0b';
+        }
+        else {
+            ctx.strokeStyle = '#000000';
+        }
         
         var arrowSize = 10;
         
-        if (src === 'Decision') {
-            if (y2 > y1 && x2 > x1) {
-                let fromX = x1 + 120;
-                let fromY = y1 + 50;
-                let toX = x2 + 60;
-                let toY = y2;
+        if (y2 - y1 > 80) {
+            let fromX = x1 + 60;
+            let toX = x2 + 60;
+            let fromY = y1 + 60;
+            let toY = y2;
+            this._canvas_arrow(ctx, fromX, fromY, toX, toY);
+            
+            console.log("y2 - y1 > 80");
 
-                this._canvas_arrow(ctx, fromX, fromY, toX, toY);
-            } 
-            else if (y2 > y1 && x2 < x1) {
-                let fromX = x1 - 10;
-                let fromY = y1 + 50;
-                let toX = x2 + 60;
-                let toY = y2;
+        }
+        else if (x2 - x1 > 140 && y2 - y1 < 80 && y2 - y1 > -80) {
+            let fromX = x1 + 120;
+            let toX = x2;
+            let fromY = y1 + 30;
+            let toY = y2 + 30;
+            this._canvas_arrow(ctx, fromX, fromY, toX, toY);
+            console.log("x2 - x1 > 140");
 
-                this._canvas_arrow(ctx, fromX, fromY, toX, toY);
-            }
+        }
+        else if (x1 - x2 > 140 && y2 - y1 < 80 && y2 - y1 > -80) {
+            let fromX = x1;
+            let toX = x2 + 120;
+            let fromY = y1 + 30;
+            let toY = y2 + 30;
+            this._canvas_arrow(ctx, fromX, fromY, toX, toY);
+            
+            console.log("x1 - x2 > 140");
+        }
+        else if (x1 < x2) {
+            ctx.moveTo(x1, y1 + 30);
+            ctx.lineTo(x1 - 30, y1 + 30);
+            ctx.lineTo(x1 - 30, y2 + 30);
+            this._canvas_arrow(ctx, x1 - 30, y2 + 30, x2, y2 + 30);
         }
         else {
-            if (y2 - y1 > 80) {
-                let fromX = x1 + 60;
-                let toX = x2 + 60;
-                let fromY = y1 + 60;
-                let toY = y2;
-                this._canvas_arrow(ctx, fromX, fromY, toX, toY);
-                
-                console.log("y2 - y1 > 80");
-
-            }
-            else if (x2 - x1 > 140) {
-                let fromX = x1 + 120;
-                let toX = x2;
-                let fromY = y1 + 30;
-                let toY = y2 + 30;
-                this._canvas_arrow(ctx, fromX, fromY, toX, toY);
-                console.log("x2 - x1 > 140");
-
-            }
-            else if (x1 - x2 > 140) {
-                let fromX = x1;
-                let toX = x2 + 120;
-                let fromY = y1 + 30;
-                let toY = y2 + 30;
-                this._canvas_arrow(ctx, fromX, fromY, toX, toY);
-                
-                console.log("x1 - x2 > 140");
-            }
+            ctx.moveTo(x1 + 120, y1 + 30);
+            ctx.lineTo(x1 + 150, y1 + 30);
+            ctx.lineTo(x1 + 150, y2 + 30);
+            this._canvas_arrow(ctx, x1 + 150, y2 + 30, x2 + 120, y2 + 30);
         }
         
-    
         console.log(x1, y1, x2, y2);
             // ctx.moveTo(x1, y1);
             // ctx.lineTo(x1, y2);

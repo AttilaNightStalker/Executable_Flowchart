@@ -45,9 +45,6 @@ define([
     // (this allows the browser to then only load those relevant parts).
     FlowChartVizControl.prototype.selectedObjectChanged = function (nodeId) {
 
-        console.log("FlowChartVizControl.prototype.selectedObjectChanged");
-        console.log(nodeId)
-
         var desc = this._getObjectDescriptor(nodeId),
             self = this;
 
@@ -109,9 +106,6 @@ define([
     /* * * * * * * * Node Event Handling * * * * * * * */
     FlowChartVizControl.prototype._eventCallback = function (events) {
 
-        console.log("FlowChartVizControl.prototype._eventCallback");
-        console.log(events);
-
         var i = events ? events.length : 0,
             event;
 
@@ -143,9 +137,6 @@ define([
     };
 
     FlowChartVizControl.prototype._onLoad = function (gmeId) {
-
-        console.log("FlowChartVizControl.prototype._onLoad");
-        console.log(gmeId);
 
         var description = this._getObjectDescriptor(gmeId);
         this._widget.addNode(description);
@@ -300,7 +291,6 @@ define([
 
         childrenIds.forEach(function(childId){
             let child = self._client.getNode(childId);
-            
             if (child.isTypeOf(MetaName2Id['Transition'])) {
                 let src = child.getPointerId('src');
                 let dst = child.getPointerId('dst');
@@ -327,31 +317,35 @@ define([
             }
 
             else if (child.isTypeOf(MetaName2Id['Node'])) {
+
                 if (!(childId in nodesInfo)) {
                     nodesInfo[childId] = {
                         name: child.getAttribute('name'), 
                         position: child.getRegistry('position'),
                         type: MetaId2Name[child.getMetaTypeId()], 
                         inFlow: [], outFlow: []};
-                    
-                    switch (nodesInfo[childId].type) {
-                        case 'Process':
-                            nodesInfo[childId].statements = child.getAttribute('statements');
-                            break;
-                        case 'Decision':
-                            nodesInfo[childId].expression = child.getAttribute('expression');
-                        case 'Input':
-                            break;
-                        case 'Output':
-                            nodesInfo[childId].comment = child.getAttribute('comment');
-                            break;
-                        case 'End':
-                            nodesInfo[childId].comment = child.getAttribute('comment');
-                            break;
-                        default:
-                            console.error("invalid childId=" + childId);
-                    }
                 }
+
+                switch (nodesInfo[childId].type) {
+                    case 'Process':
+                        nodesInfo[childId].statements = child.getAttribute('statements');
+                        break;
+                    case 'Decision':
+                        nodesInfo[childId].expression = child.getAttribute('expression');
+                    case 'Input':
+                        break;
+                    case 'Output':
+                        nodesInfo[childId].comment = child.getAttribute('comment');
+                        break;
+                    case 'End':
+                        nodesInfo[childId].comment = child.getAttribute('comment');
+                        break;
+                    case 'Start':
+                        break;
+                    default:
+                        console.error("invalid childId=" + childId);
+                }
+
             }
 
             else if (child.isTypeOf(MetaName2Id['Variable'])) {
@@ -359,8 +353,10 @@ define([
 
                 varInfo[childId] = {
                     name: varName,
+                    position: child.getRegistry('position'),
                     type: MetaId2Name[child.getMetaTypeId()],
-                    value: child.getAttribute('value')
+                    value: child.getAttribute('value'), 
+                    default_val: child.getAttribute('value')
                 }
 
                 if (varName in varNameMap) {
@@ -375,12 +371,12 @@ define([
 
         if (errorMsg.length > 0) {
             console.log("error msg: " + errorMsg);
+            this._widget.reportErrors(errorMsg);
         }
         else {
             console.log("correct chart!");
+            this._widget.renderChart(nodesInfo, varInfo, varNameMap);
         }
-
-        this._widget.renderChart(nodesInfo, varInfo, varNameMap);
     }
 
     FlowChartVizControl.prototype._checkValidity = function(nodesInfo, varInfo) {
@@ -417,7 +413,7 @@ define([
                     else if (nodeInfo.outFlow.length > 1) {
                         errorMsg.push("multiple out flow for Process with name=" + nodeInfo.name + "and id=" + id);
                     }
-
+                    
                     nodeInfo.func = this._getStatements(nodeInfo.statements, varInfo);
 
                     break;
@@ -456,6 +452,7 @@ define([
         if (!funcString) {
             funcString = '';
         }
+
         var params = '';
         var retVal = '';
         for (var id in varInfo) {
@@ -478,17 +475,12 @@ define([
         var funcBody = 'function(';
         funcBody += params + "){\n" + funcString + "return " + retVal + ";\n}";
 
-        console.log(funcBody);
-
-
         var userFunc;
         try {
             eval("userFunc = " + funcBody);
-            console.log(userFunc);
             return userFunc;
         }
         catch(err) {
-            console.log(err);
             return null;
         }
     }
@@ -512,19 +504,19 @@ define([
         }
 
         var funcBody = 'function(';
-        funcBody += params + "){\n" + "return " + funcString + ";\n}";
+        funcBody += params + "){\n" + "const True=true;\nconst False=false;\n" + "return " + funcString + ";\n}";
 
-        console.log("exp", funcBody);
+        // console.log("exp", funcBody);
 
 
         var userFunc;
         try {
             eval("userFunc = " + funcBody);
-            console.log(userFunc);
+            // console.log(userFunc);
             return userFunc;
         }
         catch(err) {
-            console.log(err);
+            // console.log(err);
             return null;
         }
     }
