@@ -1,0 +1,99 @@
+const True = true;
+const False = false;
+<% var i, p, txt, input;%>
+var nodeFunc = {};
+var nodeNameMap = {};
+<% for (i = 0; i < flowChart.variables.length; i++){%>
+<% if (flowChart.variables[i].type == 'string') {%>
+var <%-flowChart.variables[i].name%> = '<%-flowChart.variables[i].value%>';
+<% }else{ %>
+var <%-flowChart.variables[i].name%> = <%-flowChart.variables[i].value%>;
+<%}%>
+<%}%>
+
+<% for (i = 0; i < flowChart.nodes.length; i++){ %>
+nodeNameMap['<%-flowChart.nodes[i].id%>'] = '<%-flowChart.nodes[i].name%>';
+nodeFunc['<%-flowChart.nodes[i].id%>'] = function() {
+<%if(flowChart.nodes[i].type == 'Process'){%> 
+    <%-flowChart.nodes[i].func%>
+    return '<%-flowChart.nodes[i].outFlow.id%>';
+<%}else if(flowChart.nodes[i].type == 'Decision'){%>
+    let tmp = <%-flowChart.nodes[i].exp%>;
+    if (tmp == true) {
+        return '<%-flowChart.nodes[i].yFlow.id %>';
+    }
+    else {
+        return '<%-flowChart.nodes[i].nFlow.id %>';
+    }
+<%}else if(flowChart.nodes[i].type == 'Start'){%>
+    return '<%-flowChart.nodes[i].outFlow.id %>';
+<%}else{%>
+    return null;
+<%}%>
+};
+<%}%>
+
+<% for (i = 0; i < flowChart.variables.length; i++){%>
+p = document.createElement('p');
+txt = document.createElement('span');
+input = document.createElement('input');
+
+txt.innerHTML = '<%-flowChart.variables[i].name%>' + ' = ';
+input.type = "text";
+input.id = 'input_' + '<%-flowChart.variables[i].name%>';
+<% if (flowChart.variables[i].type == 'string') {%> input.value = '<%-flowChart.variables[i].value%>';
+<%}else{%> input.value = <%-flowChart.variables[i].value%>;
+<%}%>
+p.appendChild(txt);
+p.appendChild(input);
+document.body.appendChild(p);
+<%}%>
+
+const startPoint = '<%-flowChart.startPoint%>';
+var curNode = null;
+
+function start() {
+    $('#info').empty();
+    curNode = startPoint;
+    var output = '';
+    console.log("################# start a new flow! ##################");
+    output += "<p>################# start a new flow! ##################</p>";
+<%for (i = 0; i < flowChart.variables.length; i++){%>
+<%if (flowChart.variables[i].type == 'string'){%>
+    <%-flowChart.variables[i].name%> = document.getElementById('input_' + '<%-flowChart.variables[i].name%>').value; 
+<%}else{%>
+    <%-flowChart.variables[i].name%> = eval(document.getElementById('input_' + '<%-flowChart.variables[i].name%>').value); <%}%> 
+    console.log('variable ' + '<%-flowChart.variables[i].name%> = ' + <%-flowChart.variables[i].name%>);
+    output += '<p>variable ' + '<%-flowChart.variables[i].name%> = ' + <%-flowChart.variables[i].name%> + '</p>';<%}%>
+    console.log("######################################################");
+    output += "<p>######################################################</p>";
+
+    $('<div>' + output + '</div>').appendTo('#info');
+    curNode = nodeFunc[curNode]();
+}
+
+function trigger() {
+    var output = '';
+    if (curNode === null) {
+        console.log("start before trigger any action!");
+        output += "<p>start before trigger any action!</p>";
+        $('<div>' + output + '</div>').appendTo('#info');
+        return;
+    }
+    console.log('################ ' + nodeNameMap[curNode] + ' ####################');
+    output += '<p>################ ' + nodeNameMap[curNode] + ' ####################</p>';
+<%for (i = 0; i < flowChart.variables.length; i++){%>
+    console.log('variable ' + '<%-flowChart.variables[i].name%> = ' + <%-flowChart.variables[i].name%>);
+    output += '<p>variable ' + '<%-flowChart.variables[i].name%> = ' + <%-flowChart.variables[i].name%> + '</p>';<%}%>   
+    console.log("######################################################");
+    output += "<p>######################################################</p>";
+
+    curNode = nodeFunc[curNode]();
+    if(curNode === null) {
+        console.log("#################### already reach the end! #####################");
+        output += "<p>#################### already reach the end! #####################</p>";
+    }
+
+    $('<div>' + output + '</div>').appendTo('#info');
+    $('#info').scrollTop($('#info')[0].scrollHeight);
+}
